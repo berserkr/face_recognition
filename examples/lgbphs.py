@@ -50,19 +50,19 @@ def threshold_mat(mat):
 
     return
 
-def build_window(img, magnitudes):
-    height, width, channels = img.shape
-    print(height, width, channels)
-    print(len(magnitudes))
+def build_window(img, magnitudes, img_h, img_w):
+    height, width = img.shape
 
-    img_h = 4
-    img_w = 10
+    channels = 3
+    #print(height, width, channels)
+    #print(len(magnitudes))
 
-    window = np.zeros((img_h * height, img_w * width, channels), dtype=np.uint8)
+    window = np.zeros((img_h * height, img_w * width), dtype=np.uint8)
 
     x = 0
     while x < img_h:
         y = 0
+
         while y < img_w:
             offset_magnitudes = x * img_h + y
             offset_win_x = x * height
@@ -77,6 +77,44 @@ def build_window(img, magnitudes):
         x = x + 1
 
     return window
+
+def get_magnitude_images(img, gabor_images):
+    magnitude_images = []
+    for gabor_img in gabor_images:
+        gmi = np.zeros_like(img)
+        mgi = np.sqrt(np.add(np.exp2(gabor_img.real), np.exp2(gabor_img.imag)))
+        magnitude_images.append(mgi)
+    
+    return magnitude_images
+
+def build_kernel_window(img_h, img_w, ksize, kernels):
+
+    if kernels and len(kernels) > 0 and img_h > 0 and img_w > 0 and (img_h*img_w<=len(kernels)):
+
+        height, width = ksize+1, ksize+1
+        window = np.zeros((height*img_h, width*img_w), dtype=np.uint8)
+
+        x = 0
+        while x < img_h:
+            y = 0
+
+            while y < img_w:
+                offset_kernels = x * img_w + y
+                offset_win_x = x * height
+                offset_win_y = y * width
+
+                window[offset_win_x:offset_win_x + height,
+                    offset_win_y:offset_win_y + width] = kernels[offset_kernels]
+
+                y = y + 1
+
+            x = x + 1
+
+        return window
+
+    else:
+        print('No kernels were detected')
+        return None
 
 def gabor_fn(sigma, theta, Lambda, psi, gamma):
     sigma_x = sigma
@@ -121,8 +159,8 @@ def gaborFilterBank(u,v,m,n):
             for x in range(0, m):
                 for y in range(0, n):
 
-                    xprime = (x-((m)/2))*np.cos(tetav)+(y-((n)/2))*np.sin(tetav);
-                    yprime = -(x-((m)/2))*np.sin(tetav)+(y-((n)/2))*np.cos(tetav);
+                    xprime = (x-((m+1)/2))*np.cos(tetav)+(y-((n+1)/2))*np.sin(tetav);
+                    yprime = -(x-((m+1)/2))*np.sin(tetav)+(y-((n+1)/2))*np.cos(tetav);
                     #print ( (fu**2/(pi*gama*eta))*np.exp(-((alpha**2)*(xprime**2)+(beta**2)*(yprime**2)))*np.exp(1j*2*pi*fu*xprime))
                     #print (gFilter[x, y])
                     gFilter[x, y] = (fu**2/(pi*gama*eta))*np.exp(-((alpha**2)*(xprime**2)+(beta**2)*(yprime**2)))*np.exp(1j*2*pi*fu*xprime)
@@ -132,33 +170,18 @@ def gaborFilterBank(u,v,m,n):
             
     return kernels #gaborArray
 
-def build_filters():
+def build_filters(ksize):
     filter_list = []
-    ksize = 9
-
-    """
-     Size ksize = new Size(9, 9);
-    double[] theta = new double[]{22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5, 180.0};
-    double[] lambd = new double[]{5.0, 10.0, 15.0, 20.0, 25.0};
-    double gamma = 1;
-    double sigma = 5;
-
-    for(int i = 0; i < lambd.length; i++){
-        for(int j = 0; j < theta.length; j++){
-            Mat kernel = Imgproc.getGaborKernel(ksize, sigma, theta[j], lambd[i], gamma);
-            kernels.add(kernel);
-        }
-    }  
-
-    """
     #thetas = v * np.pi  / 8
+
+    # freq max is usually set to 0.25 per Struc and Pavesic
     f_max = 0.25
     #f_u = f_max  /  2 ** (u/2)
 
     #thetas = [22.5, 45.0, 67.5, 90.0, 112.5, 135.0, 157.5, 180.0]
-    #lambdas = [5.0, 10.0, 15.0, 20.0, 25.0]
-    gamma = math.sqrt(2)
-    sigma = 5
+    lambdas = [5.0, 10.0, 15.0, 20.0, 25.0]
+    gamma = 1 #0.02 #math.sqrt(2) #1 #math.sqrt(2)
+    sigma = math.sqrt(2) #4 #5
     psi = 0
     
     # eta = n = sqrt(2)
@@ -178,8 +201,6 @@ def build_filters():
     for v in [1, 2, 3, 4, 5, 6, 7, 8]:
         thetas.append(float(v * math.pi / 8))
 
-    print (thetas)
-    
     for u in [0, 1, 2, 3, 4]:
         f_u = f_max  /  2 ** float(u/2)
         lambd = math.pi / float(180/f_u)
@@ -193,14 +214,18 @@ def build_filters():
                 (ksize, ksize), sigma, theta, lambd, gamma, psi, ktype=cv2.CV_32F)
             filter_list.append(kern)
 
-    return filter_list
+            """
+            cv2.imshow('kern_%s_%s' % (str(theta), str(lambd)), cv2.resize(kern, (ksize*10, ksize*10)) )
+            cv2.waitKey(0)
+            """
 
+    return filter_list
 
 def process(img, filters):
     magnitudes = []
     accum = np.zeros_like(img)
     for kern in filters:
-        fimg = cv2.filter2D(img, cv2.CV_8UC3, kern.real)
+        fimg = cv2.filter2D(img, cv2.CV_8UC1, kern)
         magnitudes.append(fimg)
         np.maximum(accum, fimg, accum)
     return accum, magnitudes
@@ -219,12 +244,17 @@ if __name__ == '__main__':
         print('Failed to load image file:', img_fn)
         sys.exit(1)
 
-    filters = build_filters()
+    filters = build_filters(8)
     #filters = gaborFilterBank(5,8,39,39)
 
     gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    res1, magnitudes = process(img, filters)
-    res1 = build_window(img, magnitudes)
+    res1, filtered_images = process(gray_img, filters)
+
+    res1 = build_window(gray_img, filtered_images, 4, 10)
+    cv2.imshow('filtered_images', res1)
+
+    magnitudes = get_magnitude_images(gray_img, filtered_images);
+    res1 = build_window(gray_img, magnitudes, 4, 10)
 
     #gaborArray = gaborFilterBank(5,8,39,39)
 
@@ -233,3 +263,10 @@ if __name__ == '__main__':
     cv2.imshow('result', res1)
     cv2.waitKey(0)
     cv2.destroyAllWindows()
+    
+    """
+    res1 = build_kernel_window(8, 5, 9, filters)
+    cv2.imshow('kernels', res1)
+    cv2.waitKey(0)
+    cv2.destroyAllWindows()
+    """
