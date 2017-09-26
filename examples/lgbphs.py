@@ -55,13 +55,16 @@ def build_window(img, magnitudes):
     print(height, width, channels)
     print(len(magnitudes))
 
-    window = np.zeros((4 * height, 10 * width, channels), dtype=np.uint8)
+    img_h = 4
+    img_w = 10
+
+    window = np.zeros((img_h * height, img_w * width, channels), dtype=np.uint8)
 
     x = 0
-    while x < 4:
+    while x < img_h:
         y = 0
-        while y < 10:
-            offset_magnitudes = x * 4 + y
+        while y < img_w:
+            offset_magnitudes = x * img_h + y
             offset_win_x = x * height
             offset_win_y = y * width
 
@@ -172,24 +175,23 @@ def build_filters():
     thetas = []
     lambdas = []
 
-    for v in [0, 1, 2, 3, 4, 5, 6, 7]:
-        thetas.append(v * math.pi / 8)
+    for v in [1, 2, 3, 4, 5, 6, 7, 8]:
+        thetas.append(float(v * math.pi / 8))
+
+    print (thetas)
     
-    for u in [4, 5, 6, 7, 8]:
-        f_u = f_max  /  2 ** (u/2)
-        lambd = 2 * math.pi / f_u
+    for u in [0, 1, 2, 3, 4]:
+        f_u = f_max  /  2 ** float(u/2)
+        lambd = math.pi / float(180/f_u)
         print(lambd)
-        lambdas.append(u)
+        lambdas.append(lambd)
 
     # generate 40 kernels
     for theta in thetas:
         for lambd in lambdas:
-          kern = cv2.getGaborKernel(
-              (ksize, ksize), sigma, theta, lambd, gamma, psi, ktype=cv2.CV_32F)
-
-          print (kern)
-
-          filter_list.append(kern)
+            kern = cv2.getGaborKernel(
+                (ksize, ksize), sigma, theta, lambd, gamma, psi, ktype=cv2.CV_32F)
+            filter_list.append(kern)
 
     return filter_list
 
@@ -210,7 +212,7 @@ if __name__ == '__main__':
     try:
         img_fn = sys.argv[1]
     except:
-        img_fn = 'examples/lena-128x128.jpg'
+        img_fn = 'examples/lady.png'
 
     img = cv2.imread(img_fn)
     if img is None:
@@ -220,6 +222,7 @@ if __name__ == '__main__':
     filters = build_filters()
     #filters = gaborFilterBank(5,8,39,39)
 
+    gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     res1, magnitudes = process(img, filters)
     res1 = build_window(img, magnitudes)
 
